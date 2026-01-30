@@ -1,0 +1,347 @@
+{
+    "appid": "f5c0cc2c-fcc3-452a-a6e9-8facb4f9951c",
+    "name": "Line Message",
+    "description": "Line Message",
+    "type": "devops",
+    "product_vendor": "Line",
+    "logo": "linemessage.png",
+    "logo_dark": "linemessage_dark.png",
+    "product_name": "Line Message",
+    "python_version": "3.9",
+    "product_version_regex": ".*",
+    "publisher": "Joy Chen",
+    "license": "Copyright (c) Joy Chen, 2025",
+    "app_version": "1.1.0",
+    "utctime_updated": "2026-01-20T04:16:49.543934Z",
+    "package_name": "phantom_linemessage",
+    "main_module": "linemessage_connector.py",
+    "min_phantom_version": "6.4.1.361",
+    "app_wizard_version": "1.0.0",
+    "configuration": {
+        "channel access token": {
+            "description": "channel access token",
+            "data_type": "password",
+            "required": true,
+            "order": 0,
+            "name": "channel access token",
+            "id": 0
+        },
+        "timeout": {
+            "description": "timeout, default 10",
+            "data_type": "numeric",
+            "required": false,
+            "value_list": [],
+            "default": "10",
+            "order": 1,
+            "name": "timeout",
+            "id": 1
+        }
+    },
+    "actions": [
+        {
+            "action": "test connectivity",
+            "identifier": "test_connectivity",
+            "description": "Validate the asset configuration for connectivity using supplied configuration",
+            "verbose": "",
+            "type": "test",
+            "read_only": true,
+            "parameters": {},
+            "output": [],
+            "versions": "EQ(*)"
+        },
+        {
+            "action": "push message",
+            "identifier": "push_message",
+            "description": "Sends a message to a user, group chat, or multi-person chat at any time.  #",
+            "verbose": "",
+            "type": "generic",
+            "read_only": false,
+            "parameters": {
+                "input": {
+                    "description": "String message that is going to push to",
+                    "data_type": "string",
+                    "required": true,
+                    "primary": false,
+                    "contains": [],
+                    "value_list": [],
+                    "default": "",
+                    "order": 0,
+                    "name": "input"
+                },
+                "to": {
+                    "description": "Receiver",
+                    "data_type": "string",
+                    "required": true,
+                    "primary": false,
+                    "contains": [],
+                    "value_list": [],
+                    "default": "",
+                    "order": 1,
+                    "name": "to"
+                }
+            },
+            "output": [
+                {
+                    "data_path": "action_result.parameter.input",
+                    "data_type": "string",
+                    "contains": [],
+                    "column_name": "input",
+                    "column_order": 0
+                },
+                {
+                    "data_path": "action_result.parameter.to",
+                    "data_type": "string",
+                    "contains": [],
+                    "column_name": "to",
+                    "column_order": 1
+                },
+                {
+                    "data_path": "action_result.status",
+                    "data_type": "string",
+                    "column_name": "status",
+                    "column_order": 2
+                },
+                {
+                    "data_path": "action_result.message",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "summary.total_objects",
+                    "data_type": "numeric"
+                },
+                {
+                    "data_path": "summary.total_objects_successful",
+                    "data_type": "numeric"
+                }
+            ],
+            "render": {
+                "type": "table"
+            },
+            "versions": "EQ(*)"
+        },
+        {
+            "action": "multicast message",
+            "identifier": "multicast_message",
+            "description": "Send the same message to multiple user IDs",
+            "verbose": "Send the same message to multiple user IDs. You can't send messages to group chats or multi-person chats",
+            "type": "generic",
+            "read_only": false,
+            "parameters": {
+                "to": {
+                    "description": "User IDs separate by comma (,)",
+                    "data_type": "string",
+                    "required": true,
+                    "primary": false,
+                    "contains": [
+                        "userID"
+                    ],
+                    "value_list": [],
+                    "default": "",
+                    "order": 0,
+                    "name": "to"
+                },
+                "messages": {
+                    "description": "Message to send.",
+                    "data_type": "string",
+                    "required": true,
+                    "primary": false,
+                    "contains": [
+                        "line message object"
+                    ],
+                    "value_list": [],
+                    "default": "",
+                    "order": 1,
+                    "name": "messages"
+                },
+                "notificationdisabled": {
+                    "description": "Default: false",
+                    "data_type": "boolean",
+                    "required": false,
+                    "primary": false,
+                    "contains": [],
+                    "default": false,
+                    "order": 2,
+                    "name": "notificationdisabled"
+                }
+            },
+            "output": [
+                {
+                    "data_path": "action_result.parameter.to",
+                    "data_type": "string",
+                    "contains": [
+                        "userID"
+                    ],
+                    "column_name": "to",
+                    "column_order": 0
+                },
+                {
+                    "data_path": "action_result.parameter.messages",
+                    "data_type": "string",
+                    "contains": [
+                        "line message object"
+                    ],
+                    "column_name": "messages",
+                    "column_order": 1
+                },
+                {
+                    "data_path": "action_result.parameter.notificationdisabled",
+                    "data_type": "boolean",
+                    "contains": [],
+                    "column_name": "notificationdisabled",
+                    "column_order": 2
+                },
+                {
+                    "data_path": "action_result.status",
+                    "data_type": "string",
+                    "column_name": "status",
+                    "column_order": 3
+                },
+                {
+                    "data_path": "action_result.message",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "summary.total_objects",
+                    "data_type": "numeric"
+                },
+                {
+                    "data_path": "summary.total_objects_successful",
+                    "data_type": "numeric"
+                }
+            ],
+            "render": {
+                "type": "table"
+            },
+            "versions": "EQ(*)"
+        },
+        {
+            "action": "broadcast message",
+            "identifier": "broadcast_message",
+            "description": "Broadcast all the Bot's subscriber",
+            "verbose": "Broadcast all the Bot's subscriber",
+            "type": "generic",
+            "read_only": false,
+            "parameters": {
+                "messages": {
+                    "description": "Message to send",
+                    "data_type": "string",
+                    "required": true,
+                    "primary": false,
+                    "contains": [],
+                    "value_list": [],
+                    "default": "",
+                    "order": 0,
+                    "name": "messages"
+                },
+                "notificationdisabled": {
+                    "description": "Default: false",
+                    "data_type": "boolean",
+                    "required": false,
+                    "primary": false,
+                    "contains": [],
+                    "default": false,
+                    "order": 1,
+                    "name": "notificationdisabled"
+                }
+            },
+            "output": [
+                {
+                    "data_path": "action_result.parameter.messages",
+                    "data_type": "string",
+                    "contains": [],
+                    "column_name": "messages",
+                    "column_order": 0
+                },
+                {
+                    "data_path": "action_result.parameter.notificationdisabled",
+                    "data_type": "boolean",
+                    "contains": [],
+                    "column_name": "notificationdisabled",
+                    "column_order": 1
+                },
+                {
+                    "data_path": "action_result.status",
+                    "data_type": "string",
+                    "column_name": "status",
+                    "column_order": 2
+                },
+                {
+                    "data_path": "action_result.message",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "summary.total_objects",
+                    "data_type": "numeric"
+                },
+                {
+                    "data_path": "summary.total_objects_successful",
+                    "data_type": "numeric"
+                }
+            ],
+            "render": {
+                "type": "table"
+            },
+            "versions": "EQ(*)"
+        },
+        {
+            "action": "get profile",
+            "identifier": "get_profile",
+            "description": "Get the profile information of users",
+            "verbose": "You can get the profile information of users who meet one of two conditions:\n1. Users who have added your LINE Official Account as a friend\n2. Users who haven't added your LINE Official Account as a friend but have sent a message to your LINE Official Account (except users who have blocked your LINE Official Account)",
+            "type": "generic",
+            "read_only": false,
+            "parameters": {
+                "userid": {
+                    "description": "User ID that is returned in a webhook event object. Do not use the LINE ID found on LINE.",
+                    "data_type": "string",
+                    "required": true,
+                    "primary": false,
+                    "contains": [],
+                    "value_list": [],
+                    "default": "",
+                    "order": 0,
+                    "name": "userid"
+                }
+            },
+            "output": [
+                {
+                    "data_path": "action_result.parameter.userid",
+                    "data_type": "string",
+                    "contains": [],
+                    "column_name": "userid",
+                    "column_order": 0
+                },
+                {
+                    "data_path": "action_result.status",
+                    "data_type": "string",
+                    "column_name": "status",
+                    "column_order": 1
+                },
+                {
+                    "data_path": "action_result.message",
+                    "data_type": "string"
+                },
+                {
+                    "data_path": "summary.total_objects",
+                    "data_type": "numeric"
+                },
+                {
+                    "data_path": "summary.total_objects_successful",
+                    "data_type": "numeric"
+                }
+            ],
+            "render": {
+                "type": "table"
+            },
+            "versions": "EQ(*)"
+        }
+    ],
+    "custom_made": true,
+    "copied_from_id": 2,
+    "copied_from_version": "1.0.0",
+    "directory": "linemessage_f5c0cc2c-fcc3-452a-a6e9-8facb4f9951c",
+    "version": 1,
+    "appname": "-",
+    "executable": "spawn3",
+    "disabled": false
+}
