@@ -15,7 +15,6 @@ import requests
 import json
 from bs4 import BeautifulSoup
 
-import requests
 import linemessage_consts as consts
 
 
@@ -37,7 +36,8 @@ class LineMessageConnector(BaseConnector):
         # Variable to hold a base_url in case the app makes REST calls
         # Do note that the app json defines the asset config, so please
         # modify this as you deem fit.
-        self._base_url = None
+        self._base_url = consts.LINE_BASE_ENDPOINT
+        self._channel_access_token = None
 
     def _process_empty_response(self, response, action_result):
         if response.status_code == 200:
@@ -156,19 +156,47 @@ class LineMessageConnector(BaseConnector):
 
         return self._process_response(r, action_result)
 
+   def _make_line_auth_header(self, include_content_type=True):
+
+        headers = {
+            "Authorization": f"Bearer {self._channel_access_token}"
+        }
+        
+        if include_content_type:
+            headers["Content-Type"] = "application/json"
+            
+        return headers
+
+    def _make_line_rest_call(self, endpoint, action_result, method="post", 
+                             include_content_type=True, **kwargs):
+        # Generate LINE API headers
+        headers = self._make_line_auth_header(include_content_type=include_content_type)
+        
+        # Merge with any additional headers provided in kwargs
+        if 'headers' in kwargs:
+            headers.update(kwargs['headers'])
+        
+        # Make the REST call with LINE headers
+        return self._make_rest_call(
+            endpoint, 
+            action_result, 
+            method=method, 
+            headers=headers, 
+            **kwargs
+        )
+
     def _handle_test_connectivity(self, param):
         # Add an action result object to self (BaseConnector) to represent the action for this param
         action_result = self.add_action_result(ActionResult(dict(param)))
 
-        # NOTE: test connectivity does _NOT_ take any parameters
-        # i.e. the param dictionary passed to this handler will be empty.
-        # Also typically it does not add any data into an action_result either.
-        # The status and progress messages are more important.
-
-        self.save_progress("Connecting to endpoint")
+        self.save_progress("Connecting to LINE Messaging API and verifying your Channel Access Token")
+        
         # make rest call
-        ret_val, response = self._make_rest_call(
-            '/info', action_result, params=None, headers=None
+        ret_val, response = self._make_line_rest_call(
+            consts.LINE_INFO_URL, 
+            action_result, 
+            method="get",
+            include_content_type=False
         )
 
         if phantom.is_fail(ret_val):
@@ -181,13 +209,10 @@ class LineMessageConnector(BaseConnector):
         self.save_progress("Test Connectivity Passed")
         return action_result.set_status(phantom.APP_SUCCESS)
 
-        # For now return Error with a message, in case of success we don't set the message, but use the summary
-        # return action_result.set_status(phantom.APP_ERROR, "Action not yet implemented")
-
     def _handle_push_message(self, param):
         # Implement the handler here
         # use self.save_progress(...) to send progress messages back to the platform
-        # self.save_progress("In action handler for: {0}".format(self.get_action_identifier()))
+        self.save_progress("In action handler for: {0}".format(self.get_action_identifier()))
 
         # Add an action result object to self (BaseConnector) to represent the action for this param
         action_result = self.add_action_result(ActionResult(dict(param)))
@@ -201,50 +226,30 @@ class LineMessageConnector(BaseConnector):
         # Optional values should use the .get() function
         # optional_parameter = param.get('optional_parameter', 'default_value')
         
-        def _headers(token: str) -> dict:
-            return {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {token}",
-            }
         
         payload = {"to": to, "messages": [{"type": "text", "text": message}]}
         print(payload)
-        r = requests.post(consts.LINE_PUSH_URL, headers=_headers(self._channel_access_token), json=payload, timeout=int(self._timeout))
+        ret_val, response = self._make_line_rest_call(
+            LINE_PUSH_URL, 
+            action_result, 
+            method="post",
+            json=payload
+        )
 
-        if r.status_code != 200:
-            print(r.status_code)
-            print(r.json)
-            print(r.text)
-            print("----------------------------")
-            return action_result.set_status(phantom.APP_ERROR, "Something went wrong")
-
-        # make rest call
-        # no time to implement formal code
-        # ret_val, response = self._make_rest_call(
-        #     '/v2/bot/message/push', action_result, params=None, headers=None
-        # )
-
-        # if phantom.is_fail(ret_val):
-            # the call to the 3rd party device or service failed, action result should contain all the error details
-            # for now the return is commented out, but after implementation, return from here
-            # return action_result.get_status()
-        #     pass
-
-        # Now post process the data,  uncomment code as you deem fit
+        if phantom.is_fail(ret_val):
+            return action_result.get_status()
 
         # Add the response into the data section
-        # action_result.add_data(response)
+        action_result.add_data(response if response else {"status": "sent"})
 
         # Add a dictionary that is made up of the most important values from data into the summary
-        # summary = action_result.update_summary({})
-        # summary['num_data'] = len(action_result.get_data())
+        summary = action_result.update_summary({})
+        summary['message_sent'] = True
 
         # Return success, no need to set the message, only the status
         # BaseConnector will create a textual message based off of the summary dictionary
-        return action_result.set_status(phantom.APP_SUCCESS)
+        return action_result.set_status(phantom.APP_SUCCESS, "Message pushed successfully")
 
-        # For now return Error with a message, in case of success we don't set the message, but use the summary
-        # return action_result.set_status(phantom.APP_ERROR, "Action not yet implemented")
 
     def _handle_multicast_message(self, param):
         # Implement the handler here
@@ -257,22 +262,45 @@ class LineMessageConnector(BaseConnector):
         # Access action parameters passed in the 'param' dictionary
 
         # Required values can be accessed directly
-        to = param['to']
+        to_list = param['to']
         messages = param['messages']
 
         # Optional values should use the .get() function
-        notificationdisabled = param.get('notificationdisabled', '')
+        notificationdisabled = param.get('notificationdisabled', False)
+
+        if isinstance(to_list, str):
+            recipients = [recipient.strip() for recipient in to_list.split(',')]
+        else:
+            recipients = to_list
+
+        if len(recipients) > 500:
+            return action_result.set_status(
+                phantom.APP_ERROR,
+                f"Too many recipients ({len(recipients)}). Maximum is 500."
+            )
+
+        payload = {
+            "to": recipients,
+            "messages": [
+                {
+                    "type": "text",
+                    "text": message
+                }
+            ]
+        }
 
         # make rest call
-        ret_val, response = self._make_rest_call(
-            '/message/multicast', action_result, params=None, headers=None
+        ret_val, response = self._make_line_rest_call(
+            LINE_MULTICAST_URL,
+            action_result,
+            method="post",
+            json=payload
         )
 
         if phantom.is_fail(ret_val):
             # the call to the 3rd party device or service failed, action result should contain all the error details
             # for now the return is commented out, but after implementation, return from here
-            # return action_result.get_status()
-            pass
+            return action_result.get_status()
 
         # Now post process the data,  uncomment code as you deem fit
 
@@ -280,15 +308,16 @@ class LineMessageConnector(BaseConnector):
         action_result.add_data(response)
 
         # Add a dictionary that is made up of the most important values from data into the summary
-        # summary = action_result.update_summary({})
-        # summary['num_data'] = len(action_result.get_data())
+        summary = action_result.update_summary({})
+        summary['multicast_sent'] = True
+        summary['recipient_count'] = len(recipients)
 
         # Return success, no need to set the message, only the status
         # BaseConnector will create a textual message based off of the summary dictionary
-        # return action_result.set_status(phantom.APP_SUCCESS)
-
-        # For now return Error with a message, in case of success we don't set the message, but use the summary
-        return action_result.set_status(phantom.APP_ERROR, "Action not yet implemented")
+        return action_result.set_status(
+            phantom.APP_SUCCESS, 
+            f"Multicast message sent successfully to {len(recipients)} recipients"
+        )
 
     def _handle_broadcast_message(self, param):
         # Implement the handler here
@@ -304,34 +333,50 @@ class LineMessageConnector(BaseConnector):
         messages = param['messages']
 
         # Optional values should use the .get() function
-        notificationdisabled = param.get('notificationdisabled', '')
+        notificationdisabled = param.get('notificationdisabled', False)
+
+        payload = {
+            "messages": [
+                {
+                    "type": "text",
+                    "text": message
+                }
+            ]
+        }
+
+        if notification_disabled:
+            payload["notificationDisabled"] = True
 
         # make rest call
-        ret_val, response = self._make_rest_call(
-            '/message/broadcast', action_result, params=None, headers=None
+        ret_val, response = self._make_line_rest_call(
+            LINE_MESSAGING_BROADCAST_URL,
+            action_result,
+            method="post",
+            json=payload
         )
 
         if phantom.is_fail(ret_val):
             # the call to the 3rd party device or service failed, action result should contain all the error details
             # for now the return is commented out, but after implementation, return from here
-            # return action_result.get_status()
-            pass
+            return action_result.get_status()
 
         # Now post process the data,  uncomment code as you deem fit
 
         # Add the response into the data section
-        action_result.add_data(response)
+        action_result.add_data(response if response else {"status": "broadcast_sent"})
 
         # Add a dictionary that is made up of the most important values from data into the summary
-        # summary = action_result.update_summary({})
-        # summary['num_data'] = len(action_result.get_data())
+        summary = action_result.update_summary({})
+        summary['broadcast_sent'] = True
 
         # Return success, no need to set the message, only the status
         # BaseConnector will create a textual message based off of the summary dictionary
         # return action_result.set_status(phantom.APP_SUCCESS)
-
-        # For now return Error with a message, in case of success we don't set the message, but use the summary
-        return action_result.set_status(phantom.APP_ERROR, "Action not yet implemented")
+        notification_status = "silent" if notification_disabled else "with notification"
+        return action_result.set_status(
+            phantom.APP_SUCCESS, 
+            f"Broadcast message sent successfully ({notification_status})"
+        )
 
     def _handle_get_profile(self, param):
         # Implement the handler here
@@ -350,31 +395,37 @@ class LineMessageConnector(BaseConnector):
         # optional_parameter = param.get('optional_parameter', 'default_value')
 
         # make rest call
-        ret_val, response = self._make_rest_call(
-            '/profile/{userId}', action_result, params=None, headers=None
+        ret_val, response = self._make_line_rest_call(
+            LINE_MESSAGING_PROFILE_URL.format(userId=user_id),
+            action_result,
+            method="get",
+            include_content_type=False  # GET request doesn't need Content-Type
         )
 
         if phantom.is_fail(ret_val):
             # the call to the 3rd party device or service failed, action result should contain all the error details
             # for now the return is commented out, but after implementation, return from here
-            # return action_result.get_status()
-            pass
+            return action_result.get_status()
+
 
         # Now post process the data,  uncomment code as you deem fit
 
         # Add the response into the data section
-        action_result.add_data(response)
+        action_result.add_data(response if response else {})
 
         # Add a dictionary that is made up of the most important values from data into the summary
-        # summary = action_result.update_summary({})
-        # summary['num_data'] = len(action_result.get_data())
+        summary = action_result.update_summary({})
+        summary['user_found'] = True
 
         # Return success, no need to set the message, only the status
         # BaseConnector will create a textual message based off of the summary dictionary
         # return action_result.set_status(phantom.APP_SUCCESS)
 
         # For now return Error with a message, in case of success we don't set the message, but use the summary
-        return action_result.set_status(phantom.APP_ERROR, "Action not yet implemented")
+        return action_result.set_status(
+            phantom.APP_ERROR, 
+            f"Successfully retrieved profile for user: {response.get('displayName', user_id)}
+        )
 
     def handle_action(self, param):
         ret_val = phantom.APP_SUCCESS
@@ -418,9 +469,7 @@ class LineMessageConnector(BaseConnector):
         optional_config_name = config.get('optional_config_name')
         """
 
-        self._base_url = config.get('base_url')
-        # Hard code the base url endpoint
-        # self._base_url = "https://api.line.me"
+        # self._base_url = config.get('base_url')
         self._channel_access_token = config['channel access token']
         self._timeout = config.get('timeout')
 

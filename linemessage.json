@@ -7,11 +7,11 @@
     "logo": "linemessage.png",
     "logo_dark": "linemessage_dark.png",
     "product_name": "Line Message",
-    "python_version": "3.9",
+    "python_version": "3.13",
     "product_version_regex": ".*",
     "publisher": "Joy Chen",
     "license": "Copyright (c) Joy Chen, 2025",
-    "app_version": "1.1.0",
+    "app_version": "1.0.0",
     "utctime_updated": "2026-01-20T04:16:49.543934Z",
     "package_name": "phantom_linemessage",
     "main_module": "linemessage_connector.py",
@@ -24,7 +24,8 @@
             "required": true,
             "order": 0,
             "name": "channel access token",
-            "id": 0
+            "id": 0,
+            "category": "connectivity"
         },
         "timeout": {
             "description": "timeout, default 10",
@@ -34,7 +35,8 @@
             "default": "10",
             "order": 1,
             "name": "timeout",
-            "id": 1
+            "id": 1,
+            "category": "connectivity"
         }
     },
     "actions": [
