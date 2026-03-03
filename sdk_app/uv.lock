@@ -547,7 +547,7 @@ wheels = [
 ]
 
 [[package]]
-name = "phline-message"
+name = "line-message"
 version = "1.0.0"
 source = { virtual = "." }
 dependencies = [

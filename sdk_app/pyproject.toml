@@ -1,5 +1,5 @@
 [project]
-name = "phLine_Message"
+name = "Line_Message"
 version = "1.0.0"
 description = "Line Message"
 license = "Copyright (c) Joy Chen, 2025"
