@@ -1,8 +1,10 @@
 from typing import Union
 from collections.abc import Iterator
 from zoneinfo import ZoneInfo
+import httpx
 from soar_sdk.abstract import SOARClient
 from soar_sdk.app import App
+from soar_sdk.auth import StaticTokenAuth
 from soar_sdk.params import Param, Params, OnPollParams, OnESPollParams
 from soar_sdk.action_results import ActionOutput, OutputField
 from soar_sdk.asset import BaseAsset, AssetField
@@ -33,7 +35,6 @@ class Asset(BaseAsset):
         required=True,
         sensitive=True,
         description="channel access token", 
-        alias="channel access token",
     )
     # key_header: str = AssetField(
     #     default="Authorization",
@@ -68,22 +69,18 @@ class LineAPIClient:
 
     def __init__(self, asset: Asset) -> None:
         self.base_url = "https://api.line.me/v2/bot"
-        self._token = asset.channel_access_token
         # default time out set to 5 on requests package level
         self._timeout = 5
-        self._base_headers: dict[str, str] = {
-            "Authorization": f"Bearer {asset.channel_access_token}"
-        }
+        self._auth = StaticTokenAuth(asset.channel_access_token)
 
     def request(
         self, 
         method: str, 
         endpoint: str, 
         *, 
-        content_type: bool = True,
         extra_headers: dict[str, str] | None = None, 
         **kwargs: Any
-    ) -> requests.Response:
+    ) -> httpx.Response:
         """
         Args:
             method: HTTP method (e.g. "GET", "POST")
@@ -94,31 +91,25 @@ class LineAPIClient:
         """
 
         url = self.base_url + endpoint
-        headers: dict[str, str] = {
-            **self._base_headers,
-            **({"Content-Type": "application/json"} if content_type else {}),
-            **(extra_headers or {}),
-        }
-
         logger.debug("-> %s %s", method, url)
         
-        response = getattr(requests, method.lower())(
-            url,
-            headers=headers,
-            timeout=self._timeout,
-            **kwargs,
-        )
+        with httpx.Client(auth=self._auth, timeout=self._timeout) as client:
+            response = getattr(client, method.lower())(
+                url,
+                headers=extra_headers or {},
+                **kwargs,
+            )
         logger.debug("HTTP %s", response.status_code)
 
         return response
     
     @staticmethod
-    def check_response(response: requests.Response, action: str = "LINE API") -> None:
+    def check_response(response: httpx.Response, action: str = "LINE API") -> None:
         """
             Raise a ActionFailure with detailed message on non-2xx response.
             200/204 are considered success; others are treated as errors.
         """
-        if not response.ok:
+        if not response.is_success:
             logger.error(
                 "%s failed [HTTP %s]: %s",
                 action, response.status_code, response.text,
@@ -139,9 +130,9 @@ def test_connectivity(soar: SOARClient, asset: Asset) -> None:
     """ Validate the Channel Access Token by calling GET /info. """
     logger.progress("Connecting to LINE Messaging API...")
     client = LineAPIClient(asset)
-    r = client.request("GET", "/info", content_type=False)
+    r = client.request("GET", _INFO_EP)
     LineAPIClient.check_response(r, "Test Connectivity")
-    logger.progress("Test Connectivity Passed")
+    logger.info("Test Connectivity Passed")
 
 # push message
 class PushMessageParams(Params):
@@ -156,7 +147,7 @@ class PushMessageParams(Params):
         required=True,
     )
 
-# ------ below action haven't modified yet ------
+
 @app.action(
     description="Sends a message to a user, group chat, or multi-person chat at any time.",
     action_type="generic",
@@ -167,7 +158,7 @@ def push_message(
 ) -> ActionOutput:
     logger.progress("Sending push message...")
     client = LineAPIClient(asset)
-    r = client.request("POST", "/message/push", json={
+    r = client.request("POST", _PUSH_EP, json={
         "to": params.to,
         "messages": [{"type": "text", "text": params.input}],
     })
@@ -175,7 +166,7 @@ def push_message(
 
     return ActionOutput()
 
-
+# ------ below action haven't modified yet ------
 class MulticastMessageParams(Params):
     to: str = Param(
         description="User IDs separate by comma (,)", default="", cef_types=["userID"]
