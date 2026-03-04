@@ -30,6 +30,10 @@ _GROUP_MEMBER_PROFILE_EP  = "/group/{groupId}/member/{userId}"
 
 logger = getLogger()
 
+# ---------------------------------------------------------------------------
+# Asset
+# ---------------------------------------------------------------------------
+
 class Asset(BaseAsset):
     channel_access_token: str = AssetField(
         required=True,
@@ -77,16 +81,12 @@ class LineAPIClient:
         self, 
         method: str, 
         endpoint: str, 
-        *, 
-        extra_headers: dict[str, str] | None = None, 
         **kwargs: Any
     ) -> httpx.Response:
         """
         Args:
             method: HTTP method (e.g. "GET", "POST")
             endpoint: Relative path after /v2/bot (e.g. "/info", "/message/push")
-            content_type: Whether to set Content-Type: application/json (default: True)
-            extra_headers: Additional headers to include (can override Authorization)
             **kwargs: Additional arguments to pass to requests
         """
 
@@ -96,7 +96,6 @@ class LineAPIClient:
         with httpx.Client(auth=self._auth, timeout=self._timeout) as client:
             response = getattr(client, method.lower())(
                 url,
-                headers=extra_headers or {},
                 **kwargs,
             )
         logger.debug("HTTP %s", response.status_code)
@@ -110,21 +109,16 @@ class LineAPIClient:
             200/204 are considered success; others are treated as errors.
         """
         if not response.is_success:
-            logger.error(
-                "%s failed [HTTP %s]: %s",
-                action, response.status_code, response.text,
-            )
-            raise ActionFailure(
-                f"{action} failed "
-                f"[HTTP {response.status_code}]: {response.text}"
-            )
+            msg = f"{action} failed [HTTP {response.status_code}]: {response.text}"
+            logger.error(msg)
+            raise ActionFailure(msg)
 
 
 # ---------------------------------------------------------------------------
 # Actions
 # ---------------------------------------------------------------------------
 
-# test connectivity
+### test connectivity
 @app.test_connectivity()
 def test_connectivity(soar: SOARClient, asset: Asset) -> None:
     """ Validate the Channel Access Token by calling GET /info. """
@@ -134,9 +128,9 @@ def test_connectivity(soar: SOARClient, asset: Asset) -> None:
     LineAPIClient.check_response(r, "Test Connectivity")
     logger.info("Test Connectivity Passed")
 
-# push message
+### push message
 class PushMessageParams(Params):
-    input: str = Param(
+    message: str = Param(
         description="Text content of the message to send",
         default="",
         required=True,
@@ -146,7 +140,6 @@ class PushMessageParams(Params):
         default="",
         required=True,
     )
-
 
 @app.action(
     description="Sends a message to a user, group chat, or multi-person chat at any time.",
@@ -160,54 +153,89 @@ def push_message(
     client = LineAPIClient(asset)
     r = client.request("POST", _PUSH_EP, json={
         "to": params.to,
-        "messages": [{"type": "text", "text": params.input}],
+        "messages": [{"type": "text", "text": params.message}],
     })
     LineAPIClient.check_response(r, "Push Message")
 
     return ActionOutput()
 
-# ------ below action haven't modified yet ------
+### multicast message
 class MulticastMessageParams(Params):
-    to: str = Param(
-        description="User IDs separate by comma (,)", default="", cef_types=["userID"]
+    tos: str = Param(
+        description="Comma-separated LINE user IDs to send the message to", 
+        default="",
+        required=True,
     )
-    messages: str = Param(
-        description="Message to send.", default="", cef_types=["line message object"]
+    message: str = Param(
+        description="Text content of the message to send", 
+        default="", 
+        required=True,
     )
-    notificationdisabled: bool | None = Param(
-        description="Default: false", default=False
+    notificationDisabled: bool | None = Param(
+        description="Set to true to suppress push notifications for this message",
+        default=False,
     )
-
 
 @app.action(
-    description="Send the same message to multiple user IDs",
+    description="Send a message to multiple LINE users at once",
     action_type="generic",
     read_only=False,
-    verbose="Send the same message to multiple user IDs. You can't send messages to group chats or multi-person chats",
+    verbose="Send a message to multiple LINE users at once (up to 500 recipients). You can't send messages to group chats or multi-person chats",
 )
 def multicast_message(
     params: MulticastMessageParams, soar: SOARClient, asset: Asset
 ) -> ActionOutput:
-    raise NotImplementedError()
+    logger.progress("Sending multicast message...")
+    
+    recipients = [uid.strip() for uid in params.tos.split(",") if uid.strip()]
+    if len(recipients) > 500:
+        raise ActionFailure(f"Too many recipients ({len(recipients)}). LINE API maximum is 500.")
+    if len(recipients) > 400:
+        logger.warning("Recipient count is %d, approaching the LINE API limit of 500.", len(recipients))
 
+    client = LineAPIClient(asset)
+    r = client.request("POST", _MULTICAST_EP, json={
+        "to": recipients,
+        "messages": [{"type": "text", "text": params.message}],
+        "notificationDisabled": params.notificationDisabled,
+    })
+    LineAPIClient.check_response(r, "Multicast Message")
+    logger.info("Multicast message sent successfully to %d recipients", len(recipients))
 
+    return ActionOutput()
+
+### broadcast message
 class BroadcastMessageParams(Params):
-    messages: str = Param(description="Message to send", default="")
-    notificationdisabled: bool | None = Param(
-        description="Default: false", default=False
+    message: str = Param(
+        description="Text content of the message to broadcast to all friends",
+        default="",
+        required=True,
+    )
+    notificationDisabled: bool = Param(
+        description="Set to true to suppress push notifications for this message",
+        default=False,
     )
 
-
 @app.action(
-    description="Broadcast all the Bot's subscriber",
+    description="Send a message to all users who have added the bot as a friend.",
     action_type="generic",
     read_only=False,
-    verbose="Broadcast all the Bot's subscriber",
+    verbose="Send a message to all users who have added the bot as a friend.",
 )
 def broadcast_message(
     params: BroadcastMessageParams, soar: SOARClient, asset: Asset
 ) -> ActionOutput:
-    raise NotImplementedError()
+    logger.progress("Broadcasting message...")
+
+    client = LineAPIClient(asset)
+    r = client.request("POST", _BROADCAST_EP, json={
+        "messages": [{"type": "text", "text": params.message}],
+        "notificationDisabled": params.notificationDisabled,
+    })
+    LineAPIClient.check_response(r, "Broadcast Message")
+    logger.info("Broadcast message sent successfully")
+
+    return ActionOutput()
 
 
 class GetProfileParams(Params):
