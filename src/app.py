@@ -25,6 +25,7 @@ _MULTICAST_EP             = "/message/multicast"
 _BROADCAST_EP             = "/message/broadcast"
 _REPLY_EP                 = "/message/reply"
 _QUOTA_EP                 = "/message/quota"
+_QUOTA_CONSUMPTION_EP     = "/message/quota/consumption"
 _PROFILE_EP               = "/profile/{userId}"
 _GROUP_MEMBER_PROFILE_EP  = "/group/{groupId}/member/{userId}"
 
@@ -118,7 +119,7 @@ class LineAPIClient:
 # Actions
 # ---------------------------------------------------------------------------
 
-### test connectivity
+###  Test Connectivity
 @app.test_connectivity()
 def test_connectivity(soar: SOARClient, asset: Asset) -> None:
     """ Validate the Channel Access Token by calling GET /info. """
@@ -128,7 +129,7 @@ def test_connectivity(soar: SOARClient, asset: Asset) -> None:
     LineAPIClient.check_response(r, "Test Connectivity")
     logger.info("Test Connectivity Passed")
 
-### push message
+### Push Message
 class PushMessageParams(Params):
     message: str = Param(
         description="Text content of the message to send",
@@ -159,7 +160,7 @@ def push_message(
 
     return ActionOutput()
 
-### multicast message
+### Multicast Message
 class MulticastMessageParams(Params):
     tos: str = Param(
         description="Comma-separated LINE user IDs to send the message to", 
@@ -204,7 +205,7 @@ def multicast_message(
 
     return ActionOutput()
 
-### broadcast message
+### Broadcast Message
 class BroadcastMessageParams(Params):
     message: str = Param(
         description="Text content of the message to broadcast to all friends",
@@ -237,24 +238,83 @@ def broadcast_message(
 
     return ActionOutput()
 
-
+### Get Profile
 class GetProfileParams(Params):
-    userid: str = Param(
-        description="User ID that is returned in a webhook event object. Do not use the LINE ID found on LINE.",
+    userId: str = Param(
+        description="LINE user ID of the user whose profile to retrieve",
         default="",
+        required=True,
     )
 
+### Get Profile Output
+class UserProfileOutput(ActionOutput):
+    userId: str = OutputField(example_values=["Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"])
+    displayName: str = OutputField(example_values=["John Doe"])
+    pictureUrl: str = OutputField(example_values=["https://profile.line-scdn.net/ch/v2/p/uf9da5ee2b..."])
+    statusMessage: str = OutputField(example_values=["Hello, LINE!"])
+    language: str = OutputField(example_values=["zh-TW", "en", "ja"])
 
 @app.action(
-    description="Get the profile information of users",
+    description="Get the profile of a LINE user by their user ID.",
     action_type="generic",
     read_only=False,
-    verbose="You can get the profile information of users who meet one of two conditions:\n1. Users who have added your LINE Official Account as a friend\n2. Users who haven't added your LINE Official Account as a friend but have sent a message to your LINE Official Account (except users who have blocked your LINE Official Account)",
+    verbose="Note that the userId is retrieved from the webhook event rather than the LINE ID typically used for adding friends.\n" \
+        "You can get the profile information of users who meet one of two conditions:\n"\
+        "1. Users who have added your LINE Official Account as a friend\n" \
+        "2. Users who haven't added your LINE Official Account as a friend but have sent a message to your LINE Official Account "
+        "(except users who have blocked your LINE Official Account)",
 )
 def get_profile(
     params: GetProfileParams, soar: SOARClient, asset: Asset
-) -> ActionOutput:
-    raise NotImplementedError()
+) -> UserProfileOutput:
+    logger.debug("Retrieving profile for userId=%s", params.userId)
+    client = LineAPIClient(asset)
+    r = client.request("GET", _PROFILE_EP.format(userId=params.userId))
+    LineAPIClient.check_response(r, "Get Profile")
+    data = r.json()
+
+    return UserProfileOutput(**{k: v for k, v in data.items() if k in UserProfileOutput.model_fields})
+
+### get message quota
+class QuotaOutput(ActionOutput):
+    type: str = OutputField(example_values=["limited", "none"])
+    value: int = OutputField(example_values=[500, 1000]) 
+
+@app.action(
+    description="Get the monthly message quota limit and current usage count.", 
+    verbose="Get the monthly message quota limit and current usage count.",
+    read_only=False,
+)
+def get_message_quota(
+    params: Params, soar: SOARClient, asset: Asset
+) -> QuotaOutput:
+    logger.info("Retrieving message quota...")
+
+    client = LineAPIClient(asset)
+    r = client.request("GET", _QUOTA_EP)
+    LineAPIClient.check_response(r, "Get Message Quota")
+    data = r.json()
+    return QuotaOutput(**{k: v for k, v in data.items() if k in QuotaOutput.model_fields})
+
+### get message quota consumption
+class QuotaConsumptionOutput(ActionOutput):
+    # You can get remaining quota by subtracting totalUsage from the value field in QuotaOutput
+    totalUsage: int = OutputField(example_values=[0, 250, 1000])
+
+@app.action(
+    description="Get the number of messages sent this month.", 
+    verbose="Get the number of messages sent this month. You can get remaining quota by subtracting totalUsage from the value field in the Get Message Quota action.",
+    read_only=False,
+)
+def get_message_quota_consumption(params: Params, soar: SOARClient, asset: Asset) -> QuotaConsumptionOutput:
+    logger.info("Retrieving message quota consumption...")
+
+    client = LineAPIClient(asset)
+    r = client.request("GET", _QUOTA_CONSUMPTION_EP)
+    LineAPIClient.check_response(r, "Get message quota consumption")
+    data = r.json()
+
+    return QuotaConsumptionOutput(**{k: v for k, v in data.items() if k in QuotaConsumptionOutput.model_fields})
 
 
 if __name__ == "__main__":
